@@ -1,23 +1,14 @@
 # Practice 9 - Pygame Projects
 
-This repository contains three projects:
+Projects:
 - Mickey Clock
 - Music Player
 - Moving Ball
 
-## Run
+Run:
+cd mickeys_clock && py -3.11 main.py
+cd music_player && py -3.11 main.py
+cd moving_ball && py -3.11 main.py
 
-Mickey Clock:
-cd mickeys_clock
-python main.py
-
-Music Player:
-cd music_player
-python main.py
-
-Moving Ball:
-cd moving_ball
-python main.py
-
-Requirements:
-pip install -r requirements.txt
+Install:
+py -3.11 -m pip install -r requirements.txt
