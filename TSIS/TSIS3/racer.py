@@ -1,28 +1,24 @@
 import pygame
-import sys
-import os
 import random
-import json
+import os
 import time
+import sys
 from pygame.locals import *
+from persistence import load_settings, save_score
 
 pygame.init()
 pygame.mixer.init()
 
 FPS = 60
-SCREEN_WIDTH = 400
-SCREEN_HEIGHT = 600
+WIDTH, HEIGHT = 400, 600
 
-DISPLAYSURF = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("TSIS3 Racer Game")
-FramePerSec = pygame.time.Clock()
+clock = pygame.time.Clock()
 
 BASE_DIR = os.path.dirname(__file__)
 IMAGES_DIR = os.path.join(BASE_DIR, "images")
 SOUNDS_DIR = os.path.join(BASE_DIR, "sounds")
-
-LEADERBOARD_FILE = os.path.join(BASE_DIR, "leaderboard.json")
-SETTINGS_FILE = os.path.join(BASE_DIR, "settings.json")
 
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
@@ -41,12 +37,6 @@ font_large = pygame.font.SysFont("Verdana", 42)
 LANES = [80, 160, 240, 320]
 FINISH_DISTANCE = 3000
 
-DEFAULT_SETTINGS = {
-    "sound": True,
-    "car_color": "blue",
-    "difficulty": "medium"
-}
-
 CAR_COLORS = {
     "blue": BLUE,
     "red": RED,
@@ -59,48 +49,6 @@ DIFFICULTY_SPEED = {
     "medium": 5,
     "hard": 7
 }
-
-
-def load_settings():
-    if os.path.exists(SETTINGS_FILE):
-        try:
-            with open(SETTINGS_FILE, "r") as file:
-                data = json.load(file)
-                DEFAULT_SETTINGS.update(data)
-        except:
-            pass
-    return DEFAULT_SETTINGS.copy()
-
-
-def save_settings(settings):
-    with open(SETTINGS_FILE, "w") as file:
-        json.dump(settings, file, indent=4)
-
-
-def load_leaderboard():
-    if os.path.exists(LEADERBOARD_FILE):
-        try:
-            with open(LEADERBOARD_FILE, "r") as file:
-                return json.load(file)
-        except:
-            return []
-    return []
-
-
-def save_score(name, score, distance):
-    data = load_leaderboard()
-    data.append({
-        "name": name,
-        "score": score,
-        "distance": distance
-    })
-    data = sorted(data, key=lambda x: x["score"], reverse=True)[:10]
-
-    with open(LEADERBOARD_FILE, "w") as file:
-        json.dump(data, file, indent=4)
-
-
-settings = load_settings()
 
 
 def load_image(filename, size=None, fallback_color=WHITE):
@@ -116,11 +64,7 @@ def load_image(filename, size=None, fallback_color=WHITE):
 
 
 def load_sounds():
-    sounds = {
-        "crash": None,
-        "coin": None,
-        "background": False
-    }
+    sounds = {"crash": None, "coin": None, "background": False}
 
     try:
         crash_path = os.path.join(SOUNDS_DIR, "crash.wav")
@@ -138,9 +82,9 @@ def load_sounds():
 
     try:
         for ext in [".mp3", ".wav", ".ogg"]:
-            music_path = os.path.join(SOUNDS_DIR, "background" + ext)
-            if os.path.exists(music_path):
-                pygame.mixer.music.load(music_path)
+            path = os.path.join(SOUNDS_DIR, "background" + ext)
+            if os.path.exists(path):
+                pygame.mixer.music.load(path)
                 sounds["background"] = True
                 break
     except:
@@ -149,17 +93,16 @@ def load_sounds():
     return sounds
 
 
-sounds = load_sounds()
-
-
-try:
-    background = pygame.image.load(os.path.join(IMAGES_DIR, "AnimatedStreet.png"))
-    background = pygame.transform.scale(background, (SCREEN_WIDTH, SCREEN_HEIGHT))
-except:
-    background = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-    background.fill(GRAY)
-    for y in range(0, SCREEN_HEIGHT, 60):
-        pygame.draw.rect(background, WHITE, (SCREEN_WIDTH // 2 - 5, y, 10, 35))
+def load_background():
+    try:
+        bg = pygame.image.load(os.path.join(IMAGES_DIR, "AnimatedStreet.png"))
+        return pygame.transform.scale(bg, (WIDTH, HEIGHT))
+    except:
+        bg = pygame.Surface((WIDTH, HEIGHT))
+        bg.fill(GRAY)
+        for y in range(0, HEIGHT, 60):
+            pygame.draw.rect(bg, WHITE, (WIDTH // 2 - 5, y, 10, 35))
+        return bg
 
 
 def draw_text(text, font, color, x, y, center=True):
@@ -169,28 +112,52 @@ def draw_text(text, font, color, x, y, center=True):
         rect.center = (x, y)
     else:
         rect.topleft = (x, y)
-    DISPLAYSURF.blit(img, rect)
-    return rect
+    screen.blit(img, rect)
 
 
-def draw_button(text, x, y, w, h, color=BLUE):
+def draw_button(text, x, y, w, h, color):
     rect = pygame.Rect(x, y, w, h)
-    pygame.draw.rect(DISPLAYSURF, color, rect, border_radius=10)
-    pygame.draw.rect(DISPLAYSURF, WHITE, rect, 2, border_radius=10)
+    pygame.draw.rect(screen, color, rect, border_radius=10)
+    pygame.draw.rect(screen, WHITE, rect, 2, border_radius=10)
     draw_text(text, font_small, WHITE, rect.centerx, rect.centery)
     return rect
 
 
+def input_name_screen():
+    name = ""
+
+    while True:
+        screen.fill(BLACK)
+        draw_text("Enter your name", font_medium, WHITE, WIDTH // 2, 190)
+        draw_text(name + "|", font_medium, YELLOW, WIDTH // 2, 250)
+        draw_text("Press ENTER to start", font_small, WHITE, WIDTH // 2, 330)
+
+        pygame.display.update()
+
+        for event in pygame.event.get():
+            if event.type == QUIT:
+                pygame.quit()
+                sys.exit()
+
+            if event.type == KEYDOWN:
+                if event.key == K_RETURN:
+                    return name if name.strip() else "Player"
+                elif event.key == K_BACKSPACE:
+                    name = name[:-1]
+                elif len(name) < 12:
+                    name += event.unicode
+
+
 class Player(pygame.sprite.Sprite):
-    def __init__(self):
+    def __init__(self, settings):
         super().__init__()
 
-        self.original_image = load_image("Player.png", (50, 80), CAR_COLORS[settings["car_color"]])
+        color = CAR_COLORS.get(settings["car_color"], BLUE)
+        self.image = load_image("Player.png", (50, 80), color)
 
         if not os.path.exists(os.path.join(IMAGES_DIR, "Player.png")):
-            self.original_image.fill(CAR_COLORS[settings["car_color"]])
+            self.image.fill(color)
 
-        self.image = self.original_image.copy()
         self.rect = self.image.get_rect()
         self.rect.center = (LANES[1], 520)
 
@@ -202,15 +169,15 @@ class Player(pygame.sprite.Sprite):
     def move(self):
         keys = pygame.key.get_pressed()
 
-        current_speed = self.speed
+        speed = self.speed
         if self.active_power == "nitro":
-            current_speed = 11
+            speed = 11
 
         if keys[K_LEFT] and self.rect.left > 0:
-            self.rect.x -= current_speed
+            self.rect.x -= speed
 
-        if keys[K_RIGHT] and self.rect.right < SCREEN_WIDTH:
-            self.rect.x += current_speed
+        if keys[K_RIGHT] and self.rect.right < WIDTH:
+            self.rect.x += speed
 
         if self.active_power == "nitro" and time.time() > self.power_end_time:
             self.active_power = None
@@ -239,7 +206,6 @@ class Enemy(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
 
         lane = random.choice(LANES)
-
         while abs(lane - player_x) < 40:
             lane = random.choice(LANES)
 
@@ -248,15 +214,15 @@ class Enemy(pygame.sprite.Sprite):
 
     def move(self):
         self.rect.y += self.speed
-        if self.rect.top > SCREEN_HEIGHT:
+        if self.rect.top > HEIGHT:
             self.kill()
 
 
 class Coin(pygame.sprite.Sprite):
     def __init__(self):
         super().__init__()
-        self.weight = random.choice([1, 2, 3])
 
+        self.weight = random.choice([1, 2, 3])
         self.image = load_image("Coin.png", (28, 28), YELLOW)
 
         if not os.path.exists(os.path.join(IMAGES_DIR, "Coin.png")):
@@ -269,15 +235,15 @@ class Coin(pygame.sprite.Sprite):
 
     def move(self, speed):
         self.rect.y += speed
-        if self.rect.top > SCREEN_HEIGHT:
+        if self.rect.top > HEIGHT:
             self.kill()
 
 
 class Obstacle(pygame.sprite.Sprite):
     def __init__(self, player_x):
         super().__init__()
-        self.kind = random.choice(["barrier", "oil", "pothole"])
 
+        self.kind = random.choice(["barrier", "oil", "pothole"])
         self.image = pygame.Surface((55, 35), pygame.SRCALPHA)
 
         if self.kind == "barrier":
@@ -293,11 +259,11 @@ class Obstacle(pygame.sprite.Sprite):
         while abs(lane - player_x) < 40:
             lane = random.choice(LANES)
 
-        self.rect.center = (lane, random.randint(-200, -80))
+        self.rect.center = (lane, random.randint(-220, -80))
 
     def move(self, speed):
         self.rect.y += speed
-        if self.rect.top > SCREEN_HEIGHT:
+        if self.rect.top > HEIGHT:
             self.kill()
 
 
@@ -312,23 +278,22 @@ class PowerUp(pygame.sprite.Sprite):
 
         if self.kind == "nitro":
             pygame.draw.circle(self.image, GREEN, (17, 17), 17)
-            draw = font_small.render("N", True, BLACK)
+            txt = font_small.render("N", True, BLACK)
         elif self.kind == "shield":
             pygame.draw.circle(self.image, BLUE, (17, 17), 17)
-            draw = font_small.render("S", True, WHITE)
+            txt = font_small.render("S", True, WHITE)
         else:
             pygame.draw.circle(self.image, WHITE, (17, 17), 17)
-            draw = font_small.render("R", True, RED)
+            txt = font_small.render("R", True, RED)
 
-        self.image.blit(draw, draw.get_rect(center=(17, 17)))
-
+        self.image.blit(txt, txt.get_rect(center=(17, 17)))
         self.rect = self.image.get_rect()
         self.rect.center = (random.choice(LANES), random.randint(-220, -80))
 
     def move(self, speed):
         self.rect.y += speed
 
-        if self.rect.top > SCREEN_HEIGHT:
+        if self.rect.top > HEIGHT:
             self.kill()
 
         if time.time() - self.spawn_time > 6:
@@ -340,7 +305,6 @@ class RoadEvent(pygame.sprite.Sprite):
         super().__init__()
 
         self.kind = random.choice(["speed_bump", "nitro_lane", "moving_barrier"])
-
         self.image = pygame.Surface((80, 25), pygame.SRCALPHA)
 
         if self.kind == "speed_bump":
@@ -352,7 +316,6 @@ class RoadEvent(pygame.sprite.Sprite):
 
         self.rect = self.image.get_rect()
         self.rect.center = (random.choice(LANES), random.randint(-250, -100))
-
         self.direction = random.choice([-2, 2])
 
     def move(self, speed):
@@ -360,123 +323,21 @@ class RoadEvent(pygame.sprite.Sprite):
 
         if self.kind == "moving_barrier":
             self.rect.x += self.direction
-            if self.rect.left <= 0 or self.rect.right >= SCREEN_WIDTH:
+            if self.rect.left <= 0 or self.rect.right >= WIDTH:
                 self.direction *= -1
 
-        if self.rect.top > SCREEN_HEIGHT:
+        if self.rect.top > HEIGHT:
             self.kill()
-
-
-def input_name_screen():
-    name = ""
-
-    while True:
-        DISPLAYSURF.fill(BLACK)
-        draw_text("Enter your name", font_medium, WHITE, SCREEN_WIDTH // 2, 190)
-        draw_text(name + "|", font_medium, YELLOW, SCREEN_WIDTH // 2, 250)
-        draw_text("Press ENTER to start", font_small, WHITE, SCREEN_WIDTH // 2, 330)
-
-        pygame.display.update()
-
-        for event in pygame.event.get():
-            if event.type == QUIT:
-                pygame.quit()
-                sys.exit()
-
-            if event.type == KEYDOWN:
-                if event.key == K_RETURN:
-                    return name if name.strip() else "Player"
-                elif event.key == K_BACKSPACE:
-                    name = name[:-1]
-                else:
-                    if len(name) < 12:
-                        name += event.unicode
-
-
-def leaderboard_screen():
-    while True:
-        DISPLAYSURF.fill(BLACK)
-
-        draw_text("TOP 10", font_large, YELLOW, SCREEN_WIDTH // 2, 60)
-
-        data = load_leaderboard()
-
-        y = 120
-        if not data:
-            draw_text("No scores yet", font_medium, WHITE, SCREEN_WIDTH // 2, 260)
-        else:
-            for i, item in enumerate(data):
-                text = f"{i + 1}. {item['name']} | Score: {item['score']} | Dist: {item['distance']}"
-                draw_text(text, font_small, WHITE, 30, y, center=False)
-                y += 35
-
-        back_btn = draw_button("Back", 125, 520, 150, 45, RED)
-
-        pygame.display.update()
-
-        for event in pygame.event.get():
-            if event.type == QUIT:
-                pygame.quit()
-                sys.exit()
-
-            if event.type == MOUSEBUTTONDOWN:
-                if back_btn.collidepoint(event.pos):
-                    return
-
-            if event.type == KEYDOWN and event.key == K_ESCAPE:
-                return
-
-
-def settings_screen():
-    color_list = list(CAR_COLORS.keys())
-    difficulty_list = list(DIFFICULTY_SPEED.keys())
-
-    while True:
-        DISPLAYSURF.fill(BLACK)
-
-        draw_text("SETTINGS", font_large, YELLOW, SCREEN_WIDTH // 2, 70)
-
-        sound_btn = draw_button(f"Sound: {'ON' if settings['sound'] else 'OFF'}", 80, 150, 240, 45)
-        color_btn = draw_button(f"Car color: {settings['car_color']}", 80, 220, 240, 45)
-        diff_btn = draw_button(f"Difficulty: {settings['difficulty']}", 80, 290, 240, 45)
-        back_btn = draw_button("Back", 125, 500, 150, 45, RED)
-
-        pygame.display.update()
-
-        for event in pygame.event.get():
-            if event.type == QUIT:
-                save_settings(settings)
-                pygame.quit()
-                sys.exit()
-
-            if event.type == MOUSEBUTTONDOWN:
-                if sound_btn.collidepoint(event.pos):
-                    settings["sound"] = not settings["sound"]
-                    save_settings(settings)
-
-                if color_btn.collidepoint(event.pos):
-                    index = color_list.index(settings["car_color"])
-                    settings["car_color"] = color_list[(index + 1) % len(color_list)]
-                    save_settings(settings)
-
-                if diff_btn.collidepoint(event.pos):
-                    index = difficulty_list.index(settings["difficulty"])
-                    settings["difficulty"] = difficulty_list[(index + 1) % len(difficulty_list)]
-                    save_settings(settings)
-
-                if back_btn.collidepoint(event.pos):
-                    save_settings(settings)
-                    return
 
 
 def game_over_screen(score, coins, distance):
     while True:
-        DISPLAYSURF.fill(RED)
+        screen.fill(RED)
 
-        draw_text("GAME OVER", font_large, WHITE, SCREEN_WIDTH // 2, 100)
-        draw_text(f"Score: {score}", font_medium, WHITE, SCREEN_WIDTH // 2, 190)
-        draw_text(f"Coins: {coins}", font_medium, YELLOW, SCREEN_WIDTH // 2, 230)
-        draw_text(f"Distance: {distance}", font_medium, WHITE, SCREEN_WIDTH // 2, 270)
+        draw_text("GAME OVER", font_large, WHITE, WIDTH // 2, 100)
+        draw_text(f"Score: {score}", font_medium, WHITE, WIDTH // 2, 190)
+        draw_text(f"Coins: {coins}", font_medium, YELLOW, WIDTH // 2, 230)
+        draw_text(f"Distance: {distance}", font_medium, WHITE, WIDTH // 2, 270)
 
         retry_btn = draw_button("Retry", 100, 370, 200, 50, GREEN)
         menu_btn = draw_button("Main Menu", 100, 440, 200, 50, BLUE)
@@ -496,40 +357,11 @@ def game_over_screen(score, coins, distance):
                     return "menu"
 
 
-def main_menu():
-    while True:
-        DISPLAYSURF.fill(BLACK)
-
-        draw_text("TSIS3 RACER", font_large, YELLOW, SCREEN_WIDTH // 2, 90)
-
-        play_btn = draw_button("Play", 100, 190, 200, 50, GREEN)
-        board_btn = draw_button("Leaderboard", 100, 260, 200, 50, BLUE)
-        settings_btn = draw_button("Settings", 100, 330, 200, 50, ORANGE)
-        exit_btn = draw_button("Exit", 100, 400, 200, 50, RED)
-
-        pygame.display.update()
-
-        for event in pygame.event.get():
-            if event.type == QUIT:
-                pygame.quit()
-                sys.exit()
-
-            if event.type == MOUSEBUTTONDOWN:
-                if play_btn.collidepoint(event.pos):
-                    return "play"
-
-                if board_btn.collidepoint(event.pos):
-                    leaderboard_screen()
-
-                if settings_btn.collidepoint(event.pos):
-                    settings_screen()
-
-                if exit_btn.collidepoint(event.pos):
-                    pygame.quit()
-                    sys.exit()
-
-
 def run_game():
+    settings = load_settings()
+    sounds = load_sounds()
+    background = load_background()
+
     base_speed = DIFFICULTY_SPEED[settings["difficulty"]]
     speed = base_speed
 
@@ -539,8 +371,7 @@ def run_game():
     power_bonus_score = 0
 
     player_name = input_name_screen()
-
-    player = Player()
+    player = Player(settings)
 
     all_sprites = pygame.sprite.Group()
     enemies = pygame.sprite.Group()
@@ -610,11 +441,11 @@ def run_game():
 
         if road_event_timer > 250:
             road_event_timer = 0
-            event_obj = RoadEvent()
-            road_events.add(event_obj)
-            all_sprites.add(event_obj)
+            road_event = RoadEvent()
+            road_events.add(road_event)
+            all_sprites.add(road_event)
 
-        DISPLAYSURF.blit(background, (0, 0))
+        screen.blit(background, (0, 0))
 
         player.move()
 
@@ -630,11 +461,10 @@ def run_game():
         for power in powerups:
             power.move(speed)
 
-        for road_event in road_events:
-            road_event.move(speed)
+        for event_obj in road_events:
+            event_obj.move(speed)
 
         collected_coins = pygame.sprite.spritecollide(player, coins, True)
-
         for coin in collected_coins:
             coins_collected += coin.weight
             score += coin.weight * 10
@@ -643,7 +473,6 @@ def run_game():
                 sounds["coin"].play()
 
         collected_powerups = pygame.sprite.spritecollide(player, powerups, True)
-
         for power in collected_powerups:
             if player.active_power is None:
                 player.activate_power(power.kind)
@@ -651,7 +480,6 @@ def run_game():
                 score += 20
 
         road_hits = pygame.sprite.spritecollide(player, road_events, True)
-
         for event_obj in road_hits:
             if event_obj.kind == "speed_bump":
                 score -= 10
@@ -669,7 +497,6 @@ def run_game():
                     running = False
 
         obstacle_hits = pygame.sprite.spritecollide(player, obstacles, True)
-
         if obstacle_hits:
             if player.shield:
                 player.shield = False
@@ -680,7 +507,6 @@ def run_game():
                 running = False
 
         enemy_hit = pygame.sprite.spritecollideany(player, enemies)
-
         if enemy_hit:
             if player.shield:
                 enemy_hit.kill()
@@ -693,7 +519,7 @@ def run_game():
 
         score += 1
 
-        all_sprites.draw(DISPLAYSURF)
+        all_sprites.draw(screen)
 
         remaining = max(0, FINISH_DISTANCE - distance)
 
@@ -714,7 +540,7 @@ def run_game():
             draw_text("Power: None", font_small, BLACK, 210, 10, center=False)
 
         pygame.display.update()
-        FramePerSec.tick(FPS)
+        clock.tick(FPS)
 
     pygame.mixer.music.stop()
 
@@ -722,13 +548,3 @@ def run_game():
     save_score(player_name, final_score, distance)
 
     return game_over_screen(final_score, coins_collected, distance)
-
-
-while True:
-    action = main_menu()
-
-    if action == "play":
-        while True:
-            result = run_game()
-            if result == "menu":
-                break
